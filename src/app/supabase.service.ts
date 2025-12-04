@@ -3,7 +3,7 @@ import { isPlatformBrowser } from '@angular/common';
 import { createClient, SupabaseClient, User } from '@supabase/supabase-js';
 import { Observable, BehaviorSubject, from, of } from 'rxjs';
 
-// ⚠️ TUS CLAVES REALES
+// ⚠️ TUS CLAVES
 const SUPABASE_URL = 'https://lobbfeodsebnjctoaddl.supabase.co'; 
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxvYmJmZW9kc2VibmpjdG9hZGRsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ2NTExMTQsImV4cCI6MjA4MDIyNzExNH0.EJQi325MXDJtBdezZjkWuYJ4y6hPTXfHff1vJA00j1o'; 
 
@@ -16,6 +16,7 @@ export class SupabaseService {
   currentUser$ = this._currentUser.asObservable();
 
   constructor(@Inject(PLATFORM_ID) private platformId: Object) {
+    // Inicialización segura para SSR (Servidor)
     if (isPlatformBrowser(this.platformId)) {
       try {
         this.supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -28,13 +29,11 @@ export class SupabaseService {
     }
   }
 
-  // --- MÉTODOS DE INICIALIZACIÓN (IMPORTANTE) ---
-
-  // 1. Método usado por app.config.ts (APP_INITIALIZER)
+  // --- Inicialización ---
+  
+  // 1. Método principal (usado por app.config.ts)
   public async initialize(): Promise<void> {
-    if (!isPlatformBrowser(this.platformId) || !this.supabase) {
-      return Promise.resolve();
-    }
+    if (!isPlatformBrowser(this.platformId) || !this.supabase) return Promise.resolve();
     try {
       const { data } = await this.supabase.auth.getSession();
       this._currentUser.next(data.session?.user ?? null);
@@ -43,18 +42,16 @@ export class SupabaseService {
     }
   }
 
-  // 2. Método de compatibilidad usado por Home.ts (ESTE FALTABA)
+  // 2. Método de compatibilidad (usado por Home.ts) - 🚨 ESTE FALTABA
   public async checkSession(): Promise<void> {
-    // Simplemente redirige a initialize
     return this.initialize();
   }
 
-  // --- Helpers ---
   private getClient(): SupabaseClient | null {
     return this.supabase;
   }
 
-  // --- Autenticación ---
+  // --- 🔐 Autenticación ---
   signUp(email: string, password: string): Observable<any> {
     const client = this.getClient();
     if (!client) return of({ error: { message: 'SSR: No client' } });
@@ -85,7 +82,9 @@ export class SupabaseService {
     return from(client.auth.verifyOtp({ phone, token, type: 'sms' }));
   }
 
-  // --- Base de Datos ---
+  // --- 🏆 Base de Datos ---
+
+  // Registrar Victoria o Derrota
   async registrarPartida(userId: string, esVictoria: boolean): Promise<void> {
     const client = this.getClient();
     if (!client) return;
@@ -102,16 +101,17 @@ export class SupabaseService {
     if (esVictoria) victorias++;
     else derrotas++;
 
-    const { error: updateError } = await client
+    const { error } = await client
       .from('partidas_ganadas')
       .upsert(
         { user_id: userId, victorias_pokemon: victorias, derrotas_pokemon: derrotas }, 
         { onConflict: 'user_id' } 
       );
-
-    if (updateError) console.error('Error al guardar partida:', updateError);
+      
+    if (error) console.error('Error guardando:', error);
   }
 
+  // Obtener estadísticas
   async getUserStats(userId: string): Promise<{ wins: number, losses: number }> {
     const client = this.getClient();
     if (!client) return { wins: 0, losses: 0 };
@@ -130,8 +130,14 @@ export class SupabaseService {
       losses: data?.derrotas_pokemon || 0 
     };
   }
-
+  
+  // Legacy
   async incrementarVictoria(userId: string): Promise<void> {
-      return this.registrarPartida(userId, true);
+    return this.registrarPartida(userId, true);
+  }
+  
+  async getVictorias(userId: string): Promise<number> {
+    const stats = await this.getUserStats(userId);
+    return stats.wins;
   }
 }
